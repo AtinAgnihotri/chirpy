@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 )
@@ -20,64 +19,18 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	var server http.Server
 	mux := http.NewServeMux()
-	// mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-	// 	// The "/" pattern matches everything, so we need to check
-	// 	// that we're at the root here.
-	// 	if req.URL.Path != "/" {
-	// 		http.NotFound(w, req)
-	// 		return
-	// 	}
-	// 	w.WriteHeader(http.StatusNotFound)
-	// })
+	port := "8080"
 	fileDir := http.Dir(".")
 	mux.Handle("/", http.FileServer(fileDir))
 	corsMux := corsMiddleware(mux)
-	server.Handler = corsMux
-	server.Addr = ":8080"
-	// server.
 
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		// Error starting or closing listener:
-		log.Fatalf("HTTP server ListenAndServe: %v", err)
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: corsMux,
 	}
 
-	fmt.Println("Listening on Port", server.Addr)
+	log.Printf("Serving files from %s on port: %s\n", fileDir, port)
+	log.Fatal(srv.ListenAndServe())
 
 }
-
-// package main
-
-// import (
-// 	"context"
-// 	"log"
-// 	"net/http"
-// 	"os"
-// 	"os/signal"
-// )
-
-// func main() {
-// 	var srv http.Server
-
-// 	idleConnsClosed := make(chan struct{})
-// 	go func() {
-// 		sigint := make(chan os.Signal, 1)
-// 		signal.Notify(sigint, os.Interrupt)
-// 		<-sigint
-
-// 		// We received an interrupt signal, shut down.
-// 		if err := srv.Shutdown(context.Background()); err != nil {
-// 			// Error from closing listeners, or context timeout:
-// 			log.Printf("HTTP server Shutdown: %v", err)
-// 		}
-// 		close(idleConnsClosed)
-// 	}()
-
-// 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-// 		// Error starting or closing listener:
-// 		log.Fatalf("HTTP server ListenAndServe: %v", err)
-// 	}
-
-// 	<-idleConnsClosed
-// }
