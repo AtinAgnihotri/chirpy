@@ -39,6 +39,27 @@ func main() {
 	fileDir := http.Dir(".")
 	r := chi.NewRouter()
 
+	r.Mount("/api", apiHandler(&cfg))
+
+	// fileserver endpoint
+	fsHandler := cfg.middlewareMetricsIncrement(http.StripPrefix("/app", http.FileServer(fileDir)))
+	r.Handle("/app/*", fsHandler)
+	r.Handle("/app", fsHandler)
+
+	corsMux := corsMiddleware(r)
+
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: corsMux,
+	}
+
+	log.Printf("Serving files from %s on port: %s\n", fileDir, port)
+	log.Fatal(srv.ListenAndServe())
+
+}
+
+func apiHandler(cfg *apiConfig) http.Handler {
+	r := chi.NewRouter()
 	// health endpoint
 	r.Get("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -58,20 +79,5 @@ func main() {
 		cfg.fileServerHits = 0
 		return
 	}))
-
-	// fileserver endpoint
-	fsHandler := cfg.middlewareMetricsIncrement(http.StripPrefix("/app", http.FileServer(fileDir)))
-	r.Handle("/app/*", fsHandler)
-	r.Handle("/app", fsHandler)
-
-	corsMux := corsMiddleware(r)
-
-	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: corsMux,
-	}
-
-	log.Printf("Serving files from %s on port: %s\n", fileDir, port)
-	log.Fatal(srv.ListenAndServe())
-
+	return r
 }
