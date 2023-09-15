@@ -39,7 +39,11 @@ func main() {
 	fileDir := http.Dir(".")
 	r := chi.NewRouter()
 
+	// Mount /api namespace
 	r.Mount("/api", apiHandler(&cfg))
+
+	// Mount /admin namespace
+	r.Mount("/admin", adminHandler(&cfg))
 
 	// fileserver endpoint
 	fsHandler := cfg.middlewareMetricsIncrement(http.StripPrefix("/app", http.FileServer(fileDir)))
@@ -79,5 +83,25 @@ func apiHandler(cfg *apiConfig) http.Handler {
 		cfg.fileServerHits = 0
 		return
 	}))
+	return r
+}
+
+func adminHandler(cfg *apiConfig) http.Handler {
+	r := chi.NewRouter()
+
+	// metrics endpoints
+	r.Get("/metrics", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf(`<html>
+
+		<body>
+			<h1>Welcome, Chirpy Admin</h1>
+			<p>Chirpy has been visited %d times!</p>
+		</body>
+		
+		</html>`, cfg.fileServerHits)))
+		return
+	}))
+
 	return r
 }
