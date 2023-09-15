@@ -22,7 +22,14 @@ func main() {
 	mux := http.NewServeMux()
 	port := "8080"
 	fileDir := http.Dir(".")
-	mux.Handle("/", http.FileServer(fileDir))
+	mux.Handle("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte("OK"))
+		return
+	}))
+	// mux.Handle("/app", http.FileServer(fileDir))
+	mux.Handle("/app/", http.StripPrefix("/app", http.FileServer(fileDir)))
 	corsMux := corsMiddleware(mux)
 
 	srv := &http.Server{
