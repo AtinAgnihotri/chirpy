@@ -18,9 +18,19 @@ type UserResource struct {
 	ID    int    `json:"id"`
 }
 
+type UserLoginResource struct {
+}
+
+type DetailedUserResource struct {
+	Email            string `json:"email"`
+	ID               int    `json:"id"`
+	Password         string `json:"password"`
+	ExpiresInSeconds *int   `json:"expires_in_seconds"`
+}
+
 type DBData struct {
-	Chirps map[int]ChirpResource `json:"chirps"`
-	Users  map[int]UserResource  `json:"users"`
+	Chirps map[int]ChirpResource        `json:"chirps"`
+	Users  map[int]DetailedUserResource `json:"users"`
 }
 
 type DB struct {
@@ -45,7 +55,7 @@ func NewDB(path string, isDebug bool) (*DB, error) {
 	return db, err
 }
 
-func (db *DB) CreateUsers(email string) (UserResource, error) {
+func (db *DB) CreateUsers(email string, hash string) (UserResource, error) {
 	var user UserResource
 	dbData, err := db.loadDB()
 	if err != nil {
@@ -56,7 +66,11 @@ func (db *DB) CreateUsers(email string) (UserResource, error) {
 		Email: email,
 		ID:    newId,
 	}
-	dbData.Users[newId] = user
+	dbData.Users[newId] = DetailedUserResource{
+		Email:    email,
+		ID:       newId,
+		Password: hash,
+	}
 	err = db.writeDB(dbData)
 	if err != nil {
 		return UserResource{}, nil
@@ -96,7 +110,26 @@ func (db *DB) getUserMap() (map[int]UserResource, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dbData.Users, nil
+	userMap := map[int]UserResource{}
+	for key, val := range dbData.Users {
+		userMap[key] = UserResource{
+			ID:    val.ID,
+			Email: val.Email,
+		}
+	}
+	return userMap, nil
+}
+
+func (db *DB) GetUserMapByEmails() (map[string]DetailedUserResource, error) {
+	pwdMap := map[string]DetailedUserResource{}
+	dbData, err := db.loadDB()
+	if err != nil {
+		return pwdMap, err
+	}
+	for _, entry := range dbData.Users {
+		pwdMap[entry.Email] = entry
+	}
+	return pwdMap, nil
 }
 
 func (db *DB) GetChirp(id int) (ChirpResource, error) {
@@ -152,7 +185,7 @@ func (db *DB) GetUsers() ([]UserResource, error) {
 func (db *DB) createDB() error {
 	return db.writeDB(DBData{
 		Chirps: map[int]ChirpResource{},
-		Users:  map[int]UserResource{},
+		Users:  map[int]DetailedUserResource{},
 	})
 }
 

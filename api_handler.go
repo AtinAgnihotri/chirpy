@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/AtinAgnihotri/chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
 )
@@ -41,14 +43,12 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 		return
 	}))
 
-	// chirp endpoint
+	// Chirps endpoints
 	r.Post("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		decoder := json.NewDecoder(r.Body)
 		chirp := Chirp{}
 		err := decoder.Decode(&chirp)
-
-		// w.Header().Set("Content-Type", "application/json")
 
 		if err != nil {
 			log.Printf("Error decoding request body %v", err)
@@ -70,27 +70,53 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 
 	}))
 
+	r.Get("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		chirps, err := db.GetChirps()
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, chirps)
+	}))
+
+	r.Get("/chirps/{chirpid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		param := chi.URLParam(r, "chirpid")
+		id, err := strconv.Atoi(param)
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			return
+		}
+		chirps, err := db.GetChirp(id)
+		if err != nil {
+			RespondWithError(w, http.StatusNotFound, "unable to fetch chirps")
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, chirps)
+	}))
+
+	// Users endpoints
 	r.Post("/users", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		decoder := json.NewDecoder(r.Body)
-		user := database.UserResource{}
+		user := database.DetailedUserResource{}
 		err := decoder.Decode(&user)
-
-		// w.Header().Set("Content-Type", "application/json")
 
 		if err != nil {
 			log.Printf("Error decoding request body %v", err)
 			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
-
-		if len(user.Email) > 140 {
-			RespondWithError(w, http.StatusBadRequest, "Chirp is too long")
+		hashBytes, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+		if err != nil {
+			log.Printf("Error decoding request body %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
-		userRsc, err := db.CreateUsers(CleanupBody(user.Email))
+		userRsc, err := db.CreateUsers(user.Email, string(hashBytes))
 		if err != nil {
-			RespondWithError(w, http.StatusInternalServerError, "Unable to create a chirp")
+			RespondWithError(w, http.StatusInternalServerError, "Unable to create a user")
 			return
 		}
 
@@ -124,30 +150,43 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 		RespondWithJSON(w, http.StatusOK, chirps)
 	}))
 
-	r.Get("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// login endpoint
+	r.Post("/login", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		chirps, err := db.GetChirps()
+		decoder := json.NewDecoder(r.Body)
+		user := database.DetailedUserResource{}
+		err := decoder.Decode(&user)
+
 		if err != nil {
-			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			log.Printf("Error decoding request body %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
-		RespondWithJSON(w, http.StatusOK, chirps)
+		userMap, err := db.GetUserMapByEmails()
+		if err != nil {
+			log.Printf("Error getting users %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		usr, ok := userMap[user.Email]
+		if !ok {
+			log.Printf("Error getting users data for user %v", user.Email)
+			RespondWithError(w, http.StatusNotFound, fmt.Sprintf("%v user data not found", user.Email))
+			return
+		}
+
+		hashCmpErr := bcrypt.CompareHashAndPassword([]byte(usr.Password), []byte(user.Password))
+		if hashCmpErr != nil {
+			log.Printf("Error matching password for %v", user.Email)
+			RespondWithError(w, http.StatusUnauthorized, fmt.Sprintf("%v password incorrect", user.Email))
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, database.UserResource{
+			Email: usr.Email,
+			ID:    usr.ID,
+		})
+
 	}))
 
-	r.Get("/chirps/{chirpid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		param := chi.URLParam(r, "chirpid")
-		id, err := strconv.Atoi(param)
-		if err != nil {
-			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
-			return
-		}
-		chirps, err := db.GetChirp(id)
-		if err != nil {
-			RespondWithError(w, http.StatusNotFound, "unable to fetch chirps")
-			return
-		}
-		RespondWithJSON(w, http.StatusOK, chirps)
-	}))
 	return r
 }
