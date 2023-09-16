@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/AtinAgnihotri/chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -17,7 +18,7 @@ type CleanedChirp struct {
 	CleanedBody string `json:"cleaned_body"`
 }
 
-func ApiHandler(cfg *ApiConfig) http.Handler {
+func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 	r := chi.NewRouter()
 	// health endpoint
 	r.Get("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,13 +41,13 @@ func ApiHandler(cfg *ApiConfig) http.Handler {
 	}))
 
 	// chirp endpoint
-	r.Post("/chirp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r.Post("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		decoder := json.NewDecoder(r.Body)
 		chirp := Chirp{}
 		err := decoder.Decode(&chirp)
 
-		w.Header().Set("Content-Type", "application/json")
+		// w.Header().Set("Content-Type", "application/json")
 
 		if err != nil {
 			log.Printf("Error decoding request body %v", err)
@@ -58,16 +59,24 @@ func ApiHandler(cfg *ApiConfig) http.Handler {
 			RespondWithError(w, http.StatusBadRequest, "Chirp is too long")
 			return
 		}
-
-		cleanChirp := CleanedChirp{
-			CleanedBody: CleanupBody(chirp.Body),
+		chirpRsc, err := db.CreateChirp(CleanupBody(chirp.Body))
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "Unable to create a chirp")
+			return
 		}
-		fmt.Println(cleanChirp)
 
-		// respondWithJSON(w, http.StatusOK, CleanedChirp{
-		// 	CleanedBody: cleanupBody(chirp.Body),
-		// })
+		RespondWithJSON(w, http.StatusCreated, chirpRsc)
 
+	}))
+
+	r.Get("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		chirps, err := db.GetChirps()
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, chirps)
 	}))
 	return r
 }

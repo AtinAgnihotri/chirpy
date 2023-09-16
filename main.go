@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/AtinAgnihotri/chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -33,13 +34,18 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func main() {
 	cfg := ApiConfig{}
+	db, err := database.NewDB("./db.json")
+
+	if err != nil {
+		log.Fatal("Error setting up db", err)
+	}
 	// mux := http.NewServeMux()
 	port := "8080"
 	fileDir := http.Dir(".")
 	r := chi.NewRouter()
 
 	// Mount /api namespace
-	r.Mount("/api", ApiHandler(&cfg))
+	r.Mount("/api", ApiHandler(&cfg, db))
 
 	// Mount /admin namespace
 	r.Mount("/admin", AdminHandler(&cfg))
