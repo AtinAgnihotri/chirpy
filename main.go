@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -15,6 +16,10 @@ type apiConfig struct {
 
 type Chirp struct {
 	Body string `json:"body"`
+}
+
+type CleanedChirp struct {
+	CleanedBody string `json:"cleaned_body"`
 }
 
 type ChirpValidity struct {
@@ -41,6 +46,27 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error
 	w.WriteHeader(code)
 	w.Write(response)
 	return nil
+}
+
+func isBannedWord(token string) bool {
+	banned := []string{"kerfuffle", "sharbert", "fornax"}
+	for _, b := range banned {
+		if strings.ToLower(token) == b {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanupBody(body string) string {
+	clean := strings.TrimSpace(body)
+	tokens := strings.Split(body, " ")
+	for _, token := range tokens {
+		if isBannedWord(token) {
+			clean = strings.Replace(clean, token, "****", 1)
+		}
+	}
+	return clean
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -115,33 +141,22 @@ func apiHandler(cfg *apiConfig) http.Handler {
 		chirp := Chirp{}
 		err := decoder.Decode(&chirp)
 
-		errResponse := []byte(`{
-			"error": "Something went wrong"
-		}`)
-
 		w.Header().Set("Content-Type", "application/json")
 
 		if err != nil {
 			log.Printf("Error decoding request body %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write(errResponse)
+			respondWithError(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
 
-		tooLongResponse := []byte(`{
-			"error": "Chirp is too long"
-		}`)
-		validResponse := []byte(`{
-			"valid":true
-		}`)
-
 		if len(chirp.Body) > 140 {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(tooLongResponse)
-		} else {
-			w.WriteHeader(http.StatusOK)
-			w.Write(validResponse)
+			respondWithError(w, http.StatusBadRequest, "Chirp is too long")
+			return
 		}
+
+		respondWithJSON(w, http.StatusOK, CleanedChirp{
+			CleanedBody: cleanupBody(chirp.Body),
+		})
 
 	}))
 	return r
