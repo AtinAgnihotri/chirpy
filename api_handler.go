@@ -70,6 +70,60 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 
 	}))
 
+	r.Post("/users", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		decoder := json.NewDecoder(r.Body)
+		user := database.UserResource{}
+		err := decoder.Decode(&user)
+
+		// w.Header().Set("Content-Type", "application/json")
+
+		if err != nil {
+			log.Printf("Error decoding request body %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		if len(user.Email) > 140 {
+			RespondWithError(w, http.StatusBadRequest, "Chirp is too long")
+			return
+		}
+		userRsc, err := db.CreateUsers(CleanupBody(user.Email))
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "Unable to create a chirp")
+			return
+		}
+
+		RespondWithJSON(w, http.StatusCreated, userRsc)
+
+	}))
+
+	r.Get("/users", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		users, err := db.GetUsers()
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch users")
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, users)
+	}))
+
+	r.Get("/users/{userid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		param := chi.URLParam(r, "userid")
+		id, err := strconv.Atoi(param)
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch users")
+			return
+		}
+		chirps, err := db.GetChirp(id)
+		if err != nil {
+			RespondWithError(w, http.StatusNotFound, "unable to fetch users")
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, chirps)
+	}))
+
 	r.Get("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		chirps, err := db.GetChirps()

@@ -13,8 +13,14 @@ type ChirpResource struct {
 	ID   int    `json:"id"`
 }
 
+type UserResource struct {
+	Email string `json:"email"`
+	ID    int    `json:"id"`
+}
+
 type DBData struct {
 	Chirps map[int]ChirpResource `json:"chirps"`
+	Users  map[int]UserResource  `json:"users"`
 }
 
 type DB struct {
@@ -31,6 +37,25 @@ func NewDB(path string) (*DB, error) {
 	}
 	err := db.ensureDB()
 	return db, err
+}
+
+func (db *DB) CreateUsers(email string) (UserResource, error) {
+	var user UserResource
+	dbData, err := db.loadDB()
+	if err != nil {
+		return user, nil
+	}
+	newId := len(dbData.Users) + 1
+	user = UserResource{
+		Email: email,
+		ID:    newId,
+	}
+	dbData.Users[newId] = user
+	err = db.writeDB(dbData)
+	if err != nil {
+		return UserResource{}, nil
+	}
+	return user, nil
 }
 
 func (db *DB) CreateChirp(body string) (ChirpResource, error) {
@@ -60,6 +85,14 @@ func (db *DB) getChirpMap() (map[int]ChirpResource, error) {
 	return dbData.Chirps, nil
 }
 
+func (db *DB) getUserMap() (map[int]UserResource, error) {
+	dbData, err := db.loadDB()
+	if err != nil {
+		return nil, err
+	}
+	return dbData.Users, nil
+}
+
 func (db *DB) GetChirp(id int) (ChirpResource, error) {
 	var chirp ChirpResource
 	chirpMap, err := db.getChirpMap()
@@ -85,9 +118,35 @@ func (db *DB) GetChirps() ([]ChirpResource, error) {
 	return chirps, nil
 }
 
+func (db *DB) GetUser(id int) (UserResource, error) {
+	var user UserResource
+	userMap, err := db.getUserMap()
+	if err != nil {
+		return user, nil
+	}
+	user, ok := userMap[id]
+	if !ok {
+		return user, errors.New(fmt.Sprintf("No user with id %v found", id))
+	}
+	return user, nil
+}
+
+func (db *DB) GetUsers() ([]UserResource, error) {
+	var users []UserResource
+	userMap, err := db.getUserMap()
+	if err != nil {
+		return users, nil
+	}
+	for _, user := range userMap {
+		users = append(users, user)
+	}
+	return users, nil
+}
+
 func (db *DB) createDB() error {
 	return db.writeDB(DBData{
 		Chirps: map[int]ChirpResource{},
+		Users:  map[int]UserResource{},
 	})
 }
 
