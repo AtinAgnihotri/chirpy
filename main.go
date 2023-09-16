@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,6 +11,14 @@ import (
 
 type apiConfig struct {
 	fileServerHits int
+}
+
+type Chirp struct {
+	Body string `json:"body"`
+}
+
+type ChirpValidity struct {
+	Valid bool `json:"valid"`
 }
 
 func (cfg *apiConfig) middlewareMetricsIncrement(next http.Handler) http.Handler {
@@ -82,6 +91,43 @@ func apiHandler(cfg *apiConfig) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		cfg.fileServerHits = 0
 		return
+	}))
+
+	// validate endpoint
+	r.Post("/validate_chirp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		decoder := json.NewDecoder(r.Body)
+		chirp := Chirp{}
+		err := decoder.Decode(&chirp)
+
+		errResponse := []byte(`{
+			"error": "Something went wrong"
+		}`)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err != nil {
+			log.Printf("Error decoding request body %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(errResponse)
+			return
+		}
+
+		tooLongResponse := []byte(`{
+			"error": "Chirp is too long"
+		}`)
+		validResponse := []byte(`{
+			"valid":true
+		}`)
+
+		if len(chirp.Body) > 140 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(tooLongResponse)
+		} else {
+			w.WriteHeader(http.StatusOK)
+			w.Write(validResponse)
+		}
+
 	}))
 	return r
 }
