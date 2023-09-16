@@ -2,6 +2,8 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 )
@@ -50,13 +52,34 @@ func (db *DB) CreateChirp(body string) (ChirpResource, error) {
 	return chirp, nil
 }
 
+func (db *DB) getChirpMap() (map[int]ChirpResource, error) {
+	dbData, err := db.loadDB()
+	if err != nil {
+		return nil, err
+	}
+	return dbData.Chirps, nil
+}
+
+func (db *DB) GetChirp(id int) (ChirpResource, error) {
+	var chirp ChirpResource
+	chirpMap, err := db.getChirpMap()
+	if err != nil {
+		return chirp, nil
+	}
+	chirp, ok := chirpMap[id]
+	if !ok {
+		return chirp, errors.New(fmt.Sprintf("No chirp with id %v found", id))
+	}
+	return chirp, nil
+}
+
 func (db *DB) GetChirps() ([]ChirpResource, error) {
 	var chirps []ChirpResource
-	dbData, err := db.loadDB()
+	chirpMap, err := db.getChirpMap()
 	if err != nil {
 		return chirps, nil
 	}
-	for _, chirp := range dbData.Chirps {
+	for _, chirp := range chirpMap {
 		chirps = append(chirps, chirp)
 	}
 	return chirps, nil

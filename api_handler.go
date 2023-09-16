@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/AtinAgnihotri/chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
@@ -74,6 +75,22 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 		chirps, err := db.GetChirps()
 		if err != nil {
 			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			return
+		}
+		RespondWithJSON(w, http.StatusOK, chirps)
+	}))
+
+	r.Get("/chirps/{chirpid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		param := chi.URLParam(r, "chirpid")
+		id, err := strconv.Atoi(param)
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			return
+		}
+		chirps, err := db.GetChirp(id)
+		if err != nil {
+			RespondWithError(w, http.StatusNotFound, "unable to fetch chirps")
 			return
 		}
 		RespondWithJSON(w, http.StatusOK, chirps)
