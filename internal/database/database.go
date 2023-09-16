@@ -30,10 +30,16 @@ type DB struct {
 
 var DataBase DB
 
-func NewDB(path string) (*DB, error) {
+func NewDB(path string, isDebug bool) (*DB, error) {
 	db := &DB{
 		path: path,
 		mux:  &sync.RWMutex{},
+	}
+	if isDebug {
+		cleanupErr := db.cleanupDBFile()
+		if cleanupErr != nil {
+			return db, cleanupErr
+		}
 	}
 	err := db.ensureDB()
 	return db, err
@@ -148,6 +154,16 @@ func (db *DB) createDB() error {
 		Chirps: map[int]ChirpResource{},
 		Users:  map[int]UserResource{},
 	})
+}
+
+func (db *DB) cleanupDBFile() error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+	err := os.Remove(db.path)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (db *DB) ensureDB() error {

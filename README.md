@@ -11,6 +11,13 @@ sh runServer.sh
 ```
 
 And play around with the endpoints.
+<br/>
+
+Or else use the following to run the server in Debug mode. This nukes the database.
+
+```sh
+sh runServer.sh --debug
+```
 
 ### Endpoints
 

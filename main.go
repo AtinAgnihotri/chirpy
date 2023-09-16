@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 
@@ -32,9 +33,15 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func isDebugMode() bool {
+	dbg := flag.Bool("debug", false, "Enable debug mode in server")
+	flag.Parse()
+	return *dbg
+}
+
 func main() {
 	cfg := ApiConfig{}
-	db, err := database.NewDB("./db.json")
+	db, err := database.NewDB("./db.json", isDebugMode())
 
 	if err != nil {
 		log.Fatal("Error setting up db", err)
