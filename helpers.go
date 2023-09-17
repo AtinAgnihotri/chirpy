@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func RespondWithError(w http.ResponseWriter, code int, msg string) error {
@@ -40,4 +42,12 @@ func CleanupBody(body string) string {
 		}
 	}
 	return clean
+}
+
+func GetHashedPassword(pwd string) (string, error) {
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashBytes), nil
 }

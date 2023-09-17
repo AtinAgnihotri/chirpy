@@ -16,6 +16,13 @@ type ChirpResource struct {
 type UserResource struct {
 	Email string `json:"email"`
 	ID    int    `json:"id"`
+	Token string `json:"token,omitempty"`
+}
+
+type AuthUserResource struct {
+	Email string  `json:"email"`
+	ID    int     `json:"id"`
+	Token *string `json:"token"`
 }
 
 type UserLoginResource struct {
@@ -180,6 +187,18 @@ func (db *DB) GetUsers() ([]UserResource, error) {
 		users = append(users, user)
 	}
 	return users, nil
+}
+
+func (db *DB) UpdateUsers(user DetailedUserResource) error {
+	dbData, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	dbData.Users[user.ID] = user
+
+	db.writeDB(dbData)
+	return nil
 }
 
 func (db *DB) createDB() error {

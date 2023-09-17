@@ -6,11 +6,14 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/AtinAgnihotri/chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Chirp struct {
@@ -19,6 +22,10 @@ type Chirp struct {
 
 type CleanedChirp struct {
 	CleanedBody string `json:"cleaned_body"`
+}
+
+type keyCfg struct {
+	Key []byte
 }
 
 func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
@@ -108,6 +115,7 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
+
 		hashBytes, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 		if err != nil {
 			log.Printf("Error decoding request body %v", err)
@@ -150,6 +158,67 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 		RespondWithJSON(w, http.StatusOK, chirps)
 	}))
 
+	r.Put("/users", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		authHeader := strings.Replace(r.Header.Get("Authorization"), "Bearer ", "", 1)
+
+		if len(authHeader) == 0 {
+			RespondWithError(w, http.StatusUnauthorized, "Authorization token not recieved")
+			return
+		}
+		claims := jwt.MapClaims{}
+		_, err := jwt.ParseWithClaims(authHeader, claims, func(token *jwt.Token) (interface{}, error) {
+			// since we only use the one private key to sign the tokens,
+			// we also only use its public counter part to verify
+			return []byte(cfg.JWTSecret), nil
+		})
+
+		if err != nil {
+			RespondWithError(w, http.StatusUnauthorized, "Authorization failed")
+			return
+		}
+
+		for key, val := range claims {
+			fmt.Printf("Key: %v, value: %v\n", key, val)
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		user := database.DetailedUserResource{}
+		err = decoder.Decode(&user)
+
+		if err != nil {
+			log.Printf("Error decoding request body %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		subject, err := claims.GetSubject()
+		if err != nil {
+			log.Printf("Error getting subject %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		id, err := strconv.Atoi(subject)
+		if err != nil {
+			log.Printf("Error getting user id %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		user.ID = id
+		hashedPwd, err := GetHashedPassword(user.Password)
+		if err != nil {
+			log.Printf("Error hashing pwd %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went Wrong")
+			return
+		}
+		user.Password = hashedPwd
+
+		db.UpdateUsers(user)
+		RespondWithJSON(w, http.StatusOK, database.UserResource{
+			ID:    user.ID,
+			Email: user.Email,
+		})
+	}))
+
 	// login endpoint
 	r.Post("/login", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -181,9 +250,28 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			RespondWithError(w, http.StatusUnauthorized, fmt.Sprintf("%v password incorrect", user.Email))
 			return
 		}
+		expiresTime := 60 * 60 * 24
+		if user.ExpiresInSeconds != nil {
+			if *user.ExpiresInSeconds < expiresTime {
+				expiresTime = *user.ExpiresInSeconds
+			}
+		}
+		claims := jwt.RegisteredClaims{
+			Issuer:    "chirpy",
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expiresTime) * time.Second)),
+			Subject:   fmt.Sprintf("%v", usr.ID),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		signedString, err := token.SignedString([]byte(cfg.JWTSecret))
+		if err != nil {
+			signedString = "INVALID_TOKEN"
+			log.Println("Couldn't generate a token", err)
+		}
 		RespondWithJSON(w, http.StatusOK, database.UserResource{
 			Email: usr.Email,
 			ID:    usr.ID,
+			Token: signedString,
 		})
 
 	}))
