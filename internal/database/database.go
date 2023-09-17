@@ -10,8 +10,9 @@ import (
 )
 
 type ChirpResource struct {
-	Body string `json:"body"`
-	ID   int    `json:"id"`
+	Body     string `json:"body"`
+	ID       int    `json:"id"`
+	AuthorID int    `json:"author_id"`
 }
 
 type UserResource struct {
@@ -85,23 +86,44 @@ func (db *DB) CreateUsers(email string, hash string) (UserResource, error) {
 	return user, nil
 }
 
-func (db *DB) CreateChirp(body string) (ChirpResource, error) {
+func (db *DB) CreateChirp(body string, authorId int) (ChirpResource, error) {
 	var chirp ChirpResource
 	dbData, err := db.loadDB()
 	if err != nil {
-		return chirp, nil
+		return chirp, err
 	}
 	newId := len(dbData.Chirps) + 1
 	chirp = ChirpResource{
-		Body: body,
-		ID:   newId,
+		Body:     body,
+		ID:       newId,
+		AuthorID: authorId,
 	}
 	dbData.Chirps[newId] = chirp
 	err = db.writeDB(dbData)
 	if err != nil {
-		return ChirpResource{}, nil
+		return ChirpResource{}, err
 	}
 	return chirp, nil
+}
+
+func (db *DB) DeleteChirp(chirpID int, userId int) error {
+	dbData, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	chirp, ok := dbData.Chirps[chirpID]
+	if !ok {
+		return errors.New(fmt.Sprintf("No chirp found with id %v", chirpID))
+	}
+	if chirp.AuthorID != userId {
+		return errors.New("Chirp Author Invalid Authorization")
+	}
+	delete(dbData.Chirps, chirpID)
+	err = db.writeDB(dbData)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (db *DB) getChirpMap() (map[int]ChirpResource, error) {

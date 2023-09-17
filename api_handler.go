@@ -55,9 +55,50 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 	// Chirps endpoints
 	r.Post("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
+
+		authToken, err := GetAuthToken(r)
+		if err != nil {
+			log.Printf("Error getting auth token %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		claims, err := GetJWTClaims(authToken, cfg.JWTSecret)
+		if err != nil {
+			log.Printf("Error getting claims from JWT %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		issuer, err := claims.GetIssuer()
+		if err != nil {
+			log.Printf("Error getting issuer  %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		if issuer != "chirpy-access" {
+			log.Printf("Invalid issuer recieved")
+			RespondWithError(w, http.StatusUnauthorized, "Authorization Rejected")
+			return
+		}
+
+		subject, err := claims.GetSubject()
+		if err != nil {
+			log.Printf("Error getting subject %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		userId, err := strconv.Atoi(subject)
+		if err != nil {
+			log.Printf("Error getting user id %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
 		decoder := json.NewDecoder(r.Body)
 		chirp := Chirp{}
-		err := decoder.Decode(&chirp)
+		err = decoder.Decode(&chirp)
 
 		if err != nil {
 			log.Printf("Error decoding request body %v", err)
@@ -69,7 +110,7 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			RespondWithError(w, http.StatusBadRequest, "Chirp is too long")
 			return
 		}
-		chirpRsc, err := db.CreateChirp(CleanupBody(chirp.Body))
+		chirpRsc, err := db.CreateChirp(CleanupBody(chirp.Body), userId)
 		if err != nil {
 			RespondWithError(w, http.StatusInternalServerError, "Unable to create a chirp")
 			return
@@ -77,6 +118,72 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 
 		RespondWithJSON(w, http.StatusCreated, chirpRsc)
 
+	}))
+
+	r.Delete("/chirps/{chirpid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+
+		authToken, err := GetAuthToken(r)
+		if err != nil {
+			log.Printf("Error getting auth token %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		claims, err := GetJWTClaims(authToken, cfg.JWTSecret)
+		if err != nil {
+			log.Printf("Error getting claims from JWT %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		issuer, err := claims.GetIssuer()
+		if err != nil {
+			log.Printf("Error getting issuer  %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		if issuer != "chirpy-access" {
+			log.Printf("Invalid issuer recieved")
+			RespondWithError(w, http.StatusUnauthorized, "Authorization Rejected")
+			return
+		}
+
+		subject, err := claims.GetSubject()
+		if err != nil {
+			log.Printf("Error getting subject %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		userId, err := strconv.Atoi(subject)
+		if err != nil {
+			log.Printf("Error getting user id %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		param := chi.URLParam(r, "chirpid")
+		chirpId, err := strconv.Atoi(param)
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
+			return
+		}
+
+		err = db.DeleteChirp(chirpId, userId)
+		if err != nil {
+			message := err.Error()
+			consumerMessage := "Something went wrong"
+			consumerCode := http.StatusInternalServerError
+			if message == "Chirp Author Invalid Authorization" {
+				consumerCode = http.StatusForbidden
+				consumerMessage = message
+			}
+			log.Printf(message)
+			RespondWithError(w, consumerCode, consumerMessage)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
 	}))
 
 	r.Get("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
