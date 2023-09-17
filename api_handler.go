@@ -7,14 +7,16 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/AtinAgnihotri/chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
-	"github.com/golang-jwt/jwt/v5"
 )
+
+type RefreshResponse struct {
+	Token string `json:"token"`
+}
 
 type Chirp struct {
 	Body string `json:"body"`
@@ -166,20 +168,24 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			RespondWithError(w, http.StatusUnauthorized, "Authorization token not recieved")
 			return
 		}
-		claims := jwt.MapClaims{}
-		_, err := jwt.ParseWithClaims(authHeader, claims, func(token *jwt.Token) (interface{}, error) {
-			// since we only use the one private key to sign the tokens,
-			// we also only use its public counter part to verify
-			return []byte(cfg.JWTSecret), nil
-		})
-
+		claims, err := GetJWTClaims(authHeader, cfg.JWTSecret)
 		if err != nil {
-			RespondWithError(w, http.StatusUnauthorized, "Authorization failed")
+			log.Printf("Error getting claims from JWT %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
 			return
 		}
 
-		for key, val := range claims {
-			fmt.Printf("Key: %v, value: %v\n", key, val)
+		issuer, err := claims.GetIssuer()
+		if err != nil {
+			log.Printf("Error getting issuer  %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		if issuer != "chirpy-access" {
+			log.Printf("Invalid issuer recieved")
+			RespondWithError(w, http.StatusUnauthorized, "Authorization Rejected")
+			return
 		}
 
 		decoder := json.NewDecoder(r.Body)
@@ -250,30 +256,130 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			RespondWithError(w, http.StatusUnauthorized, fmt.Sprintf("%v password incorrect", user.Email))
 			return
 		}
-		expiresTime := 60 * 60 * 24
-		if user.ExpiresInSeconds != nil {
-			if *user.ExpiresInSeconds < expiresTime {
-				expiresTime = *user.ExpiresInSeconds
-			}
-		}
-		claims := jwt.RegisteredClaims{
-			Issuer:    "chirpy",
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expiresTime) * time.Second)),
-			Subject:   fmt.Sprintf("%v", usr.ID),
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		signedString, err := token.SignedString([]byte(cfg.JWTSecret))
+		accessToken, err := GenerateAccessToken(usr.ID, cfg.JWTSecret)
 		if err != nil {
-			signedString = "INVALID_TOKEN"
-			log.Println("Couldn't generate a token", err)
+			log.Printf("Error generating access token %v", err)
+			RespondWithError(w, http.StatusUnauthorized, "Something went wrong")
+			return
+		}
+		refreshToken, err := GenerateRefreshToken(usr.ID, cfg.JWTSecret)
+		if err != nil {
+			log.Printf("Error generating refresh token %v", err)
+			RespondWithError(w, http.StatusUnauthorized, "Something went wrong")
+			return
 		}
 		RespondWithJSON(w, http.StatusOK, database.UserResource{
-			Email: usr.Email,
-			ID:    usr.ID,
-			Token: signedString,
+			Email:        usr.Email,
+			ID:           usr.ID,
+			Token:        accessToken,
+			RefreshToken: refreshToken,
 		})
 
+	}))
+
+	r.Post("/refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		authHeader := strings.Replace(r.Header.Get("Authorization"), "Bearer ", "", 1)
+
+		if len(authHeader) == 0 {
+			RespondWithError(w, http.StatusUnauthorized, "Authorization token not recieved")
+			return
+		}
+
+		claims, err := GetJWTClaims(authHeader, cfg.JWTSecret)
+		if err != nil {
+			log.Printf("Error getting claims from JWT %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		issuer, err := claims.GetIssuer()
+		if err != nil {
+			log.Printf("Error getting issuer  %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		if issuer != "chirpy-refresh" {
+			log.Printf("Invalid issuer recieved")
+			RespondWithError(w, http.StatusUnauthorized, "Authorization Rejected")
+			return
+		}
+
+		subject, err := claims.GetSubject()
+		if err != nil {
+			log.Printf("Error getting subject %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		id, err := strconv.Atoi(subject)
+		if err != nil {
+			log.Printf("Error getting user id %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		revokedTokens, err := db.GetRevokedTokens()
+		if err != nil {
+			log.Printf("Error getting revoked tokens %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		if Includes[string](revokedTokens, authHeader) {
+			log.Printf("Invalid issuer recieved")
+			RespondWithError(w, http.StatusUnauthorized, "Authorization Rejected")
+			return
+		}
+
+		accessToken, err := GenerateAccessToken(id, cfg.JWTSecret)
+
+		if err != nil {
+			log.Printf("Error getting user id %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		RespondWithJSON(w, http.StatusOK, RefreshResponse{
+			Token: accessToken,
+		})
+	}))
+
+	r.Post("/revoke", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authToken, err := GetAuthToken(r)
+		if err != nil {
+			log.Printf("Error getting auth token %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		claims, err := GetJWTClaims(authToken, cfg.JWTSecret)
+		if err != nil {
+			log.Printf("Error getting claims from JWT %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		issuer, err := claims.GetIssuer()
+		if err != nil {
+			log.Printf("Error getting issuer  %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+
+		if issuer != "chirpy-refresh" {
+			log.Printf("Invalid issuer recieved")
+			RespondWithError(w, http.StatusUnauthorized, "Authorization Rejected")
+			return
+		}
+
+		err = db.RevokeToken(authToken)
+		if err != nil {
+			log.Printf("Error revoking token  %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something Went Wrong")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	}))
 
 	return r

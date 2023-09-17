@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 )
 
 type ChirpResource struct {
@@ -14,18 +15,16 @@ type ChirpResource struct {
 }
 
 type UserResource struct {
-	Email string `json:"email"`
-	ID    int    `json:"id"`
-	Token string `json:"token,omitempty"`
+	Email        string `json:"email"`
+	ID           int    `json:"id"`
+	Token        string `json:"token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 type AuthUserResource struct {
 	Email string  `json:"email"`
 	ID    int     `json:"id"`
 	Token *string `json:"token"`
-}
-
-type UserLoginResource struct {
 }
 
 type DetailedUserResource struct {
@@ -36,8 +35,9 @@ type DetailedUserResource struct {
 }
 
 type DBData struct {
-	Chirps map[int]ChirpResource        `json:"chirps"`
-	Users  map[int]DetailedUserResource `json:"users"`
+	Chirps        map[int]ChirpResource        `json:"chirps"`
+	Users         map[int]DetailedUserResource `json:"users"`
+	RevokedTokens map[string]int64             `json:"revoked_tokens"`
 }
 
 type DB struct {
@@ -127,6 +127,27 @@ func (db *DB) getUserMap() (map[int]UserResource, error) {
 	return userMap, nil
 }
 
+func (db *DB) RevokeToken(token string) error {
+	dbData, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	dbData.RevokedTokens[token] = time.Now().UTC().Unix()
+	return db.writeDB(dbData)
+}
+
+func (db *DB) GetRevokedTokens() (tokens []string, err error) {
+	var revokedTokens []string
+	dbData, err := db.loadDB()
+	if err != nil {
+		return revokedTokens, err
+	}
+	for key := range dbData.RevokedTokens {
+		revokedTokens = append(revokedTokens, key)
+	}
+	return revokedTokens, nil
+}
+
 func (db *DB) GetUserMapByEmails() (map[string]DetailedUserResource, error) {
 	pwdMap := map[string]DetailedUserResource{}
 	dbData, err := db.loadDB()
@@ -197,14 +218,14 @@ func (db *DB) UpdateUsers(user DetailedUserResource) error {
 
 	dbData.Users[user.ID] = user
 
-	db.writeDB(dbData)
-	return nil
+	return db.writeDB(dbData)
 }
 
 func (db *DB) createDB() error {
 	return db.writeDB(DBData{
-		Chirps: map[int]ChirpResource{},
-		Users:  map[int]DetailedUserResource{},
+		Chirps:        map[int]ChirpResource{},
+		Users:         map[int]DetailedUserResource{},
+		RevokedTokens: map[string]int64{},
 	})
 }
 
