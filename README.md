@@ -30,6 +30,9 @@ sh runServer.sh --debug
 - [GET] `/app/assets` : Fileserver for assets
 
 - [GET] `/api/chirps` : Get all the chirps in the DB
+  - On providing query param `author_id`, Get all chirps in the DB against that author
+
+<br />
 
 - [GET] `/api/chirps/{id}` : Get a particular chirp in the DB
 
