@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -199,6 +200,22 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 		if err != nil {
 			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
 			return
+		}
+		sortBy := "asc"
+		sortByParam := r.URL.Query().Get("sort")
+		if sortByParam == "desc" {
+			sortBy = sortByParam
+		}
+		fmt.Println("Chirps before sort", len(chirps), sortBy)
+		sort.Slice(chirps, func(p, q int) bool {
+			if sortBy == "desc" {
+				return chirps[p].ID > chirps[q].ID
+			}
+			return chirps[p].ID < chirps[q].ID
+		})
+		fmt.Println("Chirps after sort", len(chirps))
+		for idx, sl := range chirps {
+			fmt.Println(fmt.Sprintf("%v: %v, %v, %v", idx, sl.AuthorID, sl.ID, sl.Body))
 		}
 		authorIdParam := r.URL.Query().Get("author_id")
 		if len(authorIdParam) == 0 {

@@ -37,6 +37,7 @@ sh runServer.sh --debug
 
 - [GET] `/api/chirps` : Get all the chirps in the DB
   - On providing query param `author_id`, Get all chirps in the DB against that author
+  - On providing query param `sort`, Get all chirps in sorted format. By default, sort is ascending. For descending sort, provide value `desc`
 
 <br />
 
