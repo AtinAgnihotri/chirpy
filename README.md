@@ -4,6 +4,12 @@ A toy server built in go. Uses a local json as DB (I know, sue me!)
 
 ### How to run
 
+Setup the repo:
+
+```sh
+sh setup.sh
+```
+
 Hit the following cmd:
 
 ```sh
@@ -43,3 +49,15 @@ sh runServer.sh --debug
 - [GET] `/api/users/{id}` : Get a particular user in the DB
 
 - [POST] `/api/users` : Create a new user in the DB
+
+- [POST] `/api/login`: Login as a user. Returns User details, along with auth tokens
+
+- [POST] `/api/refresh`: Get a refreshed access token. Requires Refresh token in header
+
+- [POST] `/api/revoke`: Revokes a refresh token
+
+- [POST] `/api/polka/webhooks`: Webhook for our Payment Provider, Polka, that upgrades user to our vaporware program, Chirpy Red
+
+- [PUT] `/api/users`: Update details of a user. Requires a valid access token
+
+- [DELETE] `/api/chirps/{chirpid}`: Deletes a chirp by chirp id. Needs authorized access token matching the author of chirp
