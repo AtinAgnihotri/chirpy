@@ -30,6 +30,13 @@ type keyCfg struct {
 	Key []byte
 }
 
+type PolkaRequest struct {
+	Event string `json:"event"`
+	Data  struct {
+		UserID int `json:"user_id"`
+	} `json:"data"`
+}
+
 func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 	r := chi.NewRouter()
 	// health endpoint
@@ -56,7 +63,7 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 	r.Post("/chirps", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		authToken, err := GetAuthToken(r)
+		authToken, err := GetAuthBearer(r)
 		if err != nil {
 			log.Printf("Error getting auth token %v", err)
 			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
@@ -123,7 +130,7 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 	r.Delete("/chirps/{chirpid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		authToken, err := GetAuthToken(r)
+		authToken, err := GetAuthBearer(r)
 		if err != nil {
 			log.Printf("Error getting auth token %v", err)
 			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
@@ -193,7 +200,23 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			RespondWithError(w, http.StatusInternalServerError, "unable to fetch chirps")
 			return
 		}
-		RespondWithJSON(w, http.StatusOK, chirps)
+		authorIdParam := r.URL.Query().Get("author_id")
+		if len(authorIdParam) == 0 {
+			RespondWithJSON(w, http.StatusOK, chirps)
+			return
+		}
+		authorId, err := strconv.Atoi(authorIdParam)
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		var chirpsForAuthor []database.ChirpResource
+		for _, chirp := range chirps {
+			if chirp.AuthorID == authorId {
+				chirpsForAuthor = append(chirpsForAuthor, chirp)
+			}
+		}
+		RespondWithJSON(w, http.StatusOK, chirpsForAuthor)
 	}))
 
 	r.Get("/chirps/{chirpid}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -380,6 +403,7 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			ID:           usr.ID,
 			Token:        accessToken,
 			RefreshToken: refreshToken,
+			IsChirpyRed:  usr.IsChirpyRed,
 		})
 
 	}))
@@ -453,7 +477,7 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 	}))
 
 	r.Post("/revoke", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authToken, err := GetAuthToken(r)
+		authToken, err := GetAuthBearer(r)
 		if err != nil {
 			log.Printf("Error getting auth token %v", err)
 			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
@@ -487,6 +511,52 @@ func ApiHandler(cfg *ApiConfig, db *database.DB) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+	}))
+
+	r.Post("/polka/webhooks", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		event := PolkaRequest{}
+
+		apiKey, err := GetAuthApiKey(r)
+		if err != nil {
+			log.Printf("error getting api key %v", err)
+			RespondWithError(w, http.StatusUnauthorized, "Not Authorized")
+			return
+		}
+		if apiKey != cfg.PolkaApiKey {
+			log.Printf("error getting api key %v", err)
+			RespondWithError(w, http.StatusUnauthorized, "Not Authorized")
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		err = decoder.Decode(&event)
+		if err != nil {
+			log.Printf("error decoding polka response %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+		fmt.Println("Event", event.Event)
+		if event.Event != "user.upgraded" {
+			fmt.Println("Reaches here 2")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		fmt.Println("Reaches here 3")
+		err = db.MarkUserChirpyRed(event.Data.UserID)
+		if err != nil {
+			log.Printf("error marking user red %v", err)
+			message := err.Error()
+			consumerCode := http.StatusInternalServerError
+			consumerMessage := "Something went wrong"
+			if message == "User Not Found" {
+				consumerCode = http.StatusNotFound
+				consumerMessage = "User Not Found"
+			}
+			RespondWithError(w, consumerCode, consumerMessage)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
 	}))
 
 	return r

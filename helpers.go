@@ -104,10 +104,18 @@ func GetJWTClaims(authHeader, jwtSecret string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
-func GetAuthToken(r *http.Request) (string, error) {
-	authHeader := strings.Replace(r.Header.Get("Authorization"), "Bearer ", "", 1)
+func getAuthToken(r *http.Request, strip string) (string, error) {
+	authHeader := strings.Replace(r.Header.Get("Authorization"), strip, "", 1)
 	if len(authHeader) == 0 {
 		return "", errors.New("No authorization header recieved")
 	}
 	return authHeader, nil
+}
+
+func GetAuthBearer(r *http.Request) (string, error) {
+	return getAuthToken(r, "Bearer ")
+}
+
+func GetAuthApiKey(r *http.Request) (string, error) {
+	return getAuthToken(r, "ApiKey ")
 }

@@ -14,6 +14,7 @@ import (
 type ApiConfig struct {
 	fileServerHits int
 	JWTSecret      string
+	PolkaApiKey    string
 }
 
 func (cfg *ApiConfig) middlewareMetricsIncrement(next http.Handler) http.Handler {
@@ -47,10 +48,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	jwtSecret := os.Getenv("JWT_SECRET")
 
-	cfg := ApiConfig{}
-	cfg.JWTSecret = jwtSecret
+	cfg := ApiConfig{
+		JWTSecret:   os.Getenv("JWT_SECRET"),
+		PolkaApiKey: os.Getenv("POLKA_KEY"),
+	}
 	db, err := database.NewDB("./db.json", isDebugMode())
 
 	if err != nil {

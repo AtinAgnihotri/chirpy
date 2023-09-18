@@ -20,6 +20,7 @@ type UserResource struct {
 	ID           int    `json:"id"`
 	Token        string `json:"token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	IsChirpyRed  bool   `json:"is_chirpy_red"`
 }
 
 type AuthUserResource struct {
@@ -33,6 +34,7 @@ type DetailedUserResource struct {
 	ID               int    `json:"id"`
 	Password         string `json:"password"`
 	ExpiresInSeconds *int   `json:"expires_in_seconds"`
+	IsChirpyRed      bool   `json:"is_chirpy_red"`
 }
 
 type DBData struct {
@@ -84,6 +86,26 @@ func (db *DB) CreateUsers(email string, hash string) (UserResource, error) {
 		return UserResource{}, nil
 	}
 	return user, nil
+}
+
+func (db *DB) MarkUserChirpyRed(userID int) error {
+	dbData, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	fmt.Println("Chirpy Check", dbData.Users, userID)
+	user, ok := dbData.Users[userID]
+	if !ok {
+		fmt.Println("Reaches this", dbData.Users, userID)
+		return errors.New("User Not Found")
+	}
+	user.IsChirpyRed = true
+	dbData.Users[userID] = user
+	err = db.writeDB(dbData)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (db *DB) CreateChirp(body string, authorId int) (ChirpResource, error) {
